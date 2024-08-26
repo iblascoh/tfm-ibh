@@ -117,7 +117,13 @@ def update_hist_data(symbol):
 '''
 Función para obtener los datos históricos de un símbolo
 '''
-
+def getData (client, symbol_traded):
+    print('updating info')
+    global hist_data
+    hist_data = None
+    hist_data = update_hist_data(symbol_traded)
+    print('updated')
+    update_symbol(symbol_traded, None)
 
 def truncar(numero, decimales=3):
     factor = 10 ** decimales
@@ -125,7 +131,10 @@ def truncar(numero, decimales=3):
 
 def run_trader (cliente, symbol_traded):
     trade_thread = threading.Thread(target=execute_trade, args=(client, symbol_traded))
+    trade_thread2 = threading.Thread(target=getData, args=(client, symbol_traded))
     trade_thread.start()
+    trade_thread2.start()
+
 def schedule_runner():
     while True:
         schedule.run_pending()
@@ -137,6 +146,11 @@ def start_threads(client):
     schedule.every().hour.at(":14").do(execute_trade, client, symbol_traded)
     schedule.every().hour.at(":29").do(execute_trade, client, symbol_traded)
     schedule.every().hour.at(":44").do(execute_trade, client, symbol_traded)
+    # Iniciar el trader en un hilo separado
+    schedule.every().hour.at(":01").do(getData, client, symbol_traded)
+    schedule.every().hour.at(":16").do(getData, client, symbol_traded)
+    schedule.every().hour.at(":31").do(getData, client, symbol_traded)
+    schedule.every().hour.at(":36").do(getData, client, symbol_traded)
 
     # Iniciar el scheduler en un hilo separado
     scheduler_thread = threading.Thread(target=schedule_runner)
@@ -250,7 +264,7 @@ def execute_trade(client, symbol):
     
     local_stop = sec_stop
     local_symbol = symbol_traded
-    local_hist_data = hist_data
+    local_hist_data = hist_data.tail(30) if hist_data is not None  else None
     if (local_stop is  True and local_hist_data is not None and (datetime.now().timestamp() - local_hist_data.index[-1].timestamp())/60 < 15):
         print('enter')
             
@@ -454,22 +468,20 @@ Funcion para actualizar el grafico de velas
 @app.callback(
     Output('symbol_price_chart', 'figure'),
     Input('symbol_selector', 'value'),
-    Input('interval-component', 'n_intervals'),
     State('symbol_selector', 'value')
 )
-def update_symbol(symbol, n, prev_simbol):
+def update_symbol(symbol, prev_simbol):
+    global client
+    print('updating symbol graph')
+    if prev_simbol is not None:
+        getData(client, symbol)
     global hist_data
-    if  datetime.now().minute not in  (1, 16, 31, 46)   and prev_simbol == symbol and n!= 0:
-        return no_update
-    with symbol_hist_lock:
-        hist_data = None
-        df = update_hist_data(symbol)
-        hist_data = df.tail(30)    
-        fig_symbol = go.Figure(data=[go.Candlestick(x=df.index,
-                                                open=df['Open'],
-                                                high=df['High'],
-                                                low=df['Low'],
-                                                close=df['Close'])])
+    if (hist_data is not None):
+        fig_symbol = go.Figure(data=[go.Candlestick(x=hist_data.index,
+                                                open=hist_data['Open'],
+                                                high=hist_data['High'],
+                                                low=hist_data['Low'],
+                                                close=hist_data['Close'])])
         fig_symbol.update_layout(title={'text': f'Velas {symbol} ','x': 0.5,'xanchor': 'center','font': {'color': 'white'}},
                                     xaxis_title='Fecha',
                                     yaxis_title='Precio ($)',
@@ -486,8 +498,9 @@ def update_symbol(symbol, n, prev_simbol):
                                         titlefont=dict(color='white')  
                                     )
                                 )
-    return fig_symbol
-
+        return fig_symbol
+    else:
+        return no_update
 '''
 Funcion para actualizar el balance, n_trades, prob_acierto, return y pred_actual
 '''
@@ -762,5 +775,4 @@ if __name__ == '__main__':
         )
     ]
 )
-    
     app.run(debug=False, host='0.0.0.0', port=8050)

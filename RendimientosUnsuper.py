@@ -1,7 +1,7 @@
 from matplotlib import pyplot as plt
 import pandas as pd
 import pickle
-import SupervisedLearning as utils
+import MachineLearning as utils
 import numpy as np
 
 
